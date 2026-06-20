@@ -23,3 +23,13 @@ class DossierResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DocumentResponse(BaseModel):
+    id: int
+    dossier_id: int
+    nom_fichier: str
+    url: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True       

@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
+import uuid
 from app.database import get_db
-from app.models.dossier import Dossier
+from app.models.dossier import Dossier, Document
 from app.models.user import User
-from app.schemas.dossier import DossierCreate, DossierUpdate, DossierResponse
-from app.utils.auth import get_current_user, get_current_admin
+from app.schemas.dossier import DossierCreate, DossierUpdate, DossierResponse, DocumentResponse
+from app.utils.auth import get_current_user, get_current_admin, supabase_client
 
 router = APIRouter(prefix="/dossiers", tags=["Dossiers"])
 
@@ -54,3 +55,50 @@ def update_dossier(
     db.commit()
     db.refresh(dossier)
     return dossier
+
+@router.post("/{dossier_id}/documents", response_model=DocumentResponse, status_code=201)
+def upload_document(
+    dossier_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    dossier = db.query(Dossier).filter(Dossier.id == dossier_id).first()
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    if dossier.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Ce dossier ne vous appartient pas")
+
+    file_content = file.file.read()
+    file_extension = file.filename.split(".")[-1]
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    storage_path = f"dossier_{dossier_id}/{unique_filename}"
+
+    supabase_client.storage.from_("dossiers-documents").upload(
+        storage_path, file_content, {"content-type": file.content_type}
+    )
+
+    public_url = supabase_client.storage.from_("dossiers-documents").get_public_url(storage_path)
+
+    new_document = Document(
+        dossier_id=dossier_id,
+        nom_fichier=file.filename,
+        url=public_url
+    )
+    db.add(new_document)
+    db.commit()
+    db.refresh(new_document)
+    return new_document
+
+@router.get("/{dossier_id}/documents", response_model=List[DocumentResponse])
+def get_documents(
+    dossier_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    dossier = db.query(Dossier).filter(Dossier.id == dossier_id).first()
+    if not dossier:
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    if dossier.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    return db.query(Document).filter(Document.dossier_id == dossier_id).all()

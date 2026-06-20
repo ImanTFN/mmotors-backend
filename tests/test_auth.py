@@ -1,30 +1,35 @@
 import pytest
+import uuid
 from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
 
+
+
 def test_register_success():
+    unique_email = f"testunit_{uuid.uuid4().hex[:8]}@test.com"
     response = client.post("/auth/register", json={
         "nom": "Test",
         "prenom": "User",
-        "email": "testunit_new@test.com",
+        "email": unique_email,
         "password": "Test2024!"
     })
     assert response.status_code == 201
-    assert response.json()["email"] == "testunit_new@test.com"
+    assert response.json()["email"] == unique_email
 
 def test_register_duplicate_email():
+    unique_email = f"duplicate_{uuid.uuid4().hex[:8]}@test.com"
     client.post("/auth/register", json={
         "nom": "Test",
         "prenom": "User",
-        "email": "duplicate_new@test.com",
+        "email": unique_email,
         "password": "Test2024!"
     })
     response = client.post("/auth/register", json={
         "nom": "Test",
         "prenom": "User",
-        "email": "duplicate_new@test.com",
+        "email": unique_email,
         "password": "Test2024!"
     })
     assert response.status_code == 400
